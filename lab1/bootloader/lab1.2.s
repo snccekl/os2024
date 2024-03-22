@@ -1,10 +1,10 @@
-# TODO: This is lab1.3
-/* Protected Mode Loading Hello World APP */
+# TODO: This is lab1.2
+/* Protected Mode Hello World */
 .code16
-
+	
 .global start
 start:
- 	movw %cs, %ax
+	movw %cs, %ax
 	movw %ax, %ds
 	movw %ax, %es
 	movw %ax, %ss
@@ -36,9 +36,33 @@ start32:
 	movw %ax, %ss
 	movw $0x18, %ax # setting graphics data segment selector
 	movw %ax, %gs
+	
 	movl $0x8000, %eax # setting esp
 	movl %eax, %esp
- 	jmp bootMain # jump to bootMain in boot.c
+	# TODO:输出Hello World
+	pushl $13     # pushing the size to print into stack
+	pushl $message # pushing the address of message into stack
+	calll displayStr # calling the display function	
+
+
+loop32:
+	jmp loop32
+
+message:
+	.string "Hello, World!\n\0"
+	
+displayStr:
+	movl 4(%esp), %ebx # 字符串地址
+	movl 8(%esp), %ecx # 字符串长度
+	movl $0, %edi        # 显示位置
+	movb $0x0c, %ah      # 黑底红字
+nextChar:
+	movb (%ebx), %al # 读取字符
+	movw %ax, %gs:(%edi) # 写入显存
+	addl $2, %edi # 显示位置+2
+	incl %ebx # 字符串地址+1以指向下一个字符
+	loopnz nextChar # 循环
+	ret
 
 
 .p2align 2
@@ -50,7 +74,7 @@ gdt: # 8 bytes for each table entry, at least 1 entry
 	.byte 0,0,0,0 
 
 	# TODO：code segment entry
-	.word 0xffff, 0 # 段长度(segment length), 段基址(segment base)
+	.word 0xffff, 0 # 段长度(segment length), 段基址(segment base),bit0 - bit15
 	.byte 0, 0x9a, 0xcf, 0 # 段基址(segment base) Access Byte (flags) 段长度 flags标志位
 
 
@@ -65,3 +89,4 @@ gdt: # 8 bytes for each table entry, at least 1 entry
 gdtDesc: 
 	.word (gdtDesc - gdt -1) 
 	.long gdt 
+
