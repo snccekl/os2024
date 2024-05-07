@@ -5,7 +5,7 @@
 
 void bootMain(void) {
 	int i = 0;
-	int phoff = 0x34; // program header offset
+	//int phoff = 0x34; // program header offset
 	int offset = 0x1000; // .text section offset
 	unsigned int elf = 0x100000; // physical memory addr to load
 	void (*kMainEntry)(void);
@@ -16,7 +16,9 @@ void bootMain(void) {
 	}
 
 	// TODO: 阅读boot.h查看elf相关信息，填写kMainEntry、phoff、offset
-
+	struct ELFHeader *ehdr = (void *)elf;
+	kMainEntry = (void(*)(void))(ehdr->entry);
+	//phoff = ehdr->phoff;
 
 	for (i = 0; i < 200 * 512; i++) {
 			*(unsigned char *)(elf + i) = *(unsigned char *)(elf + i + offset);

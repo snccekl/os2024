@@ -31,7 +31,10 @@ void irqHandle(struct TrapFrame *tf) { // pointer tf = esp
 
 	switch(tf->irq) {
 		// TODO: 填好中断处理程序的调用
-
+		case -1:break;
+		case 0xd:GProtectFaultHandle(tf);break;
+		case 0x21:KeyboardHandle(tf);break;
+		case 0x80:syscallHandle(tf);break;
 
 		default:assert(0);
 	}
@@ -49,6 +52,7 @@ void KeyboardHandle(struct TrapFrame *tf){
 		//要求只能退格用户键盘输入的字符串，且最多退到当行行首
 		if(displayCol>0&&displayCol>tail){
 			displayCol--;
+			bufferTail--;
 			uint16_t data = 0 | (0x0c << 8);
 			int pos = (80*displayRow+displayCol)*2;
 			asm volatile("movw %0, (%1)"::"r"(data),"r"(pos+0xb8000));
@@ -66,8 +70,31 @@ void KeyboardHandle(struct TrapFrame *tf){
 		}
 	}else if(code < 0x81){ 
 		// TODO: 处理正常的字符
-		
-
+		char ch = getChar(code);
+		if (ch >= 0x20) {
+			putChar(ch);
+			keyBuffer[bufferTail++] = ch;
+			int sel = USEL(SEG_UDATA);
+			char character = ch;
+			uint16_t data = 0;
+			int pos = 0;
+			asm volatile("movw %0, %%es"::"m"(sel));
+			
+			data = character | (0x0c << 8);
+			pos = (80 * displayRow + displayCol) * 2;
+			asm volatile("movw %0, (%1)"::"r"(data), "r"(pos + 0xb8000));
+				
+			displayCol ++;
+			if (displayCol >= 80) {
+				displayCol = 0;
+				displayRow ++;
+			}
+			while (displayRow >= 25) {
+				scrollScreen();
+				displayRow --;
+				displayCol = 0;
+			}	
+		}
 	}
 	updateCursor(displayRow, displayCol);
 	
@@ -106,8 +133,24 @@ void syscallPrint(struct TrapFrame *tf) {
 	for (i = 0; i < size; i++) {
 		asm volatile("movb %%es:(%1), %0":"=r"(character):"r"(str+i));
 		// TODO: 完成光标的维护和打印到显存
-
-
+		if (character == '\n') {
+			displayRow++;
+			displayCol = 0;						
+		}	
+		else{
+			data = character | (0x0c << 8);//黑底红字
+			pos = (80*displayRow+displayCol)*2;
+			asm volatile("movw %0, (%1)"::"r"(data),"r"(pos+0xb8000));
+			displayCol++;
+		}		
+		if (displayCol == 80) {//换行
+			displayRow++;
+			displayCol = 0;
+		}
+		if(displayRow > 24){//滚屏
+			scrollScreen();
+			displayRow=24;
+		}
 	}
 	tail=displayCol;
 	updateCursor(displayRow, displayCol);
@@ -127,10 +170,43 @@ void syscallRead(struct TrapFrame *tf){
 
 void syscallGetChar(struct TrapFrame *tf){
 	// TODO: 自由实现
-
+	int flag = 0;
+	if (keyBuffer[bufferTail - 1] == '\n'){ 
+		flag = 1;
+	}
+	while (bufferTail > bufferHead && keyBuffer[bufferTail-1] == '\n'){
+		keyBuffer[--bufferTail] = '\0';
+	}
+	if (bufferTail > bufferHead && flag == 1){ 
+		tf->eax = keyBuffer[bufferHead++];
+	}
+	else{
+		tf->eax = 0;
+	}
 }
 
 void syscallGetStr(struct TrapFrame *tf){
 	// TODO: 自由实现
+	int flag = 0;
+	int i = 0;
+	int sel = USEL(SEG_UDATA);
+	asm volatile("movw %0, %%es"::"m"(sel));
 
+    #define min(a,b) (a < b ? a : b)
+
+	if (keyBuffer[bufferTail - 1] == '\n'){ 
+		flag = 1;
+	}
+	while (bufferTail > bufferHead && keyBuffer[bufferTail-1] == '\n'){ 
+		keyBuffer[--bufferTail] = '\0';
+	}
+	if (flag == 0 && bufferTail - bufferHead < tf->ebx){ 
+		tf->eax = 0;
+	}
+	else {
+		for (i = 0; i < min(tf->ebx, bufferTail-bufferHead);i++){
+			asm volatile("movl %1, %%es:(%0)"::"r"(tf->edx+i), "r"(keyBuffer[bufferHead+i]));
+		}
+		tf->eax = 1;
+	}
 }
